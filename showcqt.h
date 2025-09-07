@@ -19,66 +19,43 @@
 /* Audio visualization based on showcqt mpv/ffmpeg audio visualization */
 /* See https://github.com/FFmpeg/FFmpeg/blob/master/libavfilter/avf_showcqt.c */
 
+// Modified by Eknous for unscope - https://github.com/Eknous-P/unscope
+
 #ifndef SHOWCQT_H_INCLUDED
 #define SHOWCQT_H_INCLUDED 1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <math.h>
 #include <stdint.h>
 
-#define WASM_EXPORT extern __attribute__((__visibility__("default")))
-#define WASM_IMPORT extern __attribute__((__nothrow__))
 #define DECLARE_ALIGNED(n) __attribute__((__aligned__(n)))
-#define ALWAYS_INLINE __inline__ __attribute__((__always_inline__, __nodebug__))
+#define ALWAYS_INLINE __inline__ __attribute__((__always_inline__))
 
-/* minimalist math.h definition */
-#define M_PI 3.14159265358979323846
-#define M_LN2 0.693147180559945309417
+#define CQT_MAX_FFT_SIZE 32768
+#define CQT_MAX_KERNEL_SIZE (6*256*1024)
+#define CQT_MAX_WIDTH 7680
 
-WASM_IMPORT double sin(double);
-WASM_IMPORT double cos(double);
-WASM_IMPORT double log(double);
-WASM_IMPORT double exp(double);
-WASM_IMPORT double ceil(double);
-WASM_IMPORT double floor(double);
-WASM_IMPORT float sqrtf(float);
+// uncomment this define to use builtin color array rendering
+// #define SHOWCQT_RENDERER
 
-#ifndef WASM_SIMD
-#define WASM_SIMD 0
+#ifdef SHOWCQT_RENDERER
+#define CQT_MAX_HEIGHT 4320
+#define CQT_MIN_VOL 1.0f
+#define CQT_MAX_VOL 100.0f
 #endif
 
-#if WASM_SIMD
-#define WASM_SIMD_FUNCTION __attribute__((__target__("simd128")))
-#else
-#define WASM_SIMD_FUNCTION
-#endif
-
-#define MAX_FFT_SIZE 32768
-#define MAX_WIDTH 7680
-#define MAX_HEIGHT 4320
-#define MAX_KERNEL_SIZE (6*256*1024)
-#define MIN_VOL 1.0f
-#define MAX_VOL 100.0f
 
 typedef struct Complex {
     float re, im;
 } Complex;
 
+#ifdef SHOWCQT_RENDERER
 typedef struct ColorF {
     float r, g, b, h;
 } ColorF;
-
-#if WASM_SIMD
-typedef float   float32x4   __attribute__((__vector_size__(16), __aligned__(16)));
-typedef float   float32x4u  __attribute__((__vector_size__(16), __aligned__(4)));
-typedef int32_t int32x4     __attribute__((__vector_size__(16), __aligned__(16)));
-typedef uint8_t uint8x16    __attribute__((__vector_size__(16), __aligned__(16)));
-
-typedef struct Complex4 {
-    float32x4 re, im;
-} Complex4;
-
-typedef struct ColorF4 {
-    float32x4 r, g, b, h;
-} ColorF4;
 #endif
 
 typedef union Kernel {
@@ -93,34 +70,61 @@ typedef struct KernelIndex {
 
 typedef struct ShowCQT {
     /* args */
-    float       input[2][MAX_FFT_SIZE];
-    unsigned    output[MAX_WIDTH];
+    float        input[2][CQT_MAX_FFT_SIZE];
+#ifdef SHOWCQT_RENDERER
+    unsigned int output[CQT_MAX_WIDTH];
+#endif
+    float        magOutput[CQT_MAX_WIDTH];
 
     /* tables */
-    Complex     exp_tbl[MAX_FFT_SIZE+MAX_FFT_SIZE/4];
-    int16_t     perm_tbl[MAX_FFT_SIZE/4];
-    float       attack_tbl[MAX_FFT_SIZE/8];
+    Complex     exp_tbl[CQT_MAX_FFT_SIZE+CQT_MAX_FFT_SIZE/4];
+    int16_t     perm_tbl[CQT_MAX_FFT_SIZE/4];
+    float       attack_tbl[CQT_MAX_FFT_SIZE/8];
+#ifndef SHOWCQT_RENDERER
     uint8_t     padding[1024];
+#endif
 
     /* buffers */
-    Complex     fft_buf[MAX_FFT_SIZE+128];
-    ColorF      color_buf[MAX_WIDTH*2];
-    float       rcp_h_buf[MAX_WIDTH];
+    Complex     fft_buf[CQT_MAX_FFT_SIZE+128];
+#ifdef SHOWCQT_RENDERER
+    ColorF      color_buf[CQT_MAX_WIDTH*2];
+#endif
+    float       rcp_h_buf[CQT_MAX_WIDTH];
 
     /* kernel */
-    KernelIndex kernel_index[MAX_WIDTH*2];
-    float       kernel[MAX_KERNEL_SIZE];
+    KernelIndex kernel_index[CQT_MAX_WIDTH*2];
+    float       kernel[CQT_MAX_KERNEL_SIZE];
 
     /* props */
-    int         width;
+#ifdef SHOWCQT_RENDERER
     int         height;
+#endif
+    int         width;
     int         aligned_width;
     int         fft_size;
     int         t_size;
     int         attack_size;
+#ifdef SHOWCQT_RENDERER
     float       sono_v;
     float       bar_v;
     int         prerender;
+#endif
 } ShowCQT;
+
+float* CQT_get_input_array(ShowCQT* cqt, int index);
+#ifdef SHOWCQT_RENDERER
+unsigned int *CQT_get_output_array(ShowCQT* cqt);
+ColorF *CQT_get_color_array(ShowCQT* cqt);
+#endif
+int CQT_init(ShowCQT* cqt, int rate, int width, int height, float bar_v, float sono_v, int super);
+void CQT_calc(ShowCQT* cqt);
+#ifdef SHOWCQT_RENDERER
+void CQT_render_line_alpha(ShowCQT* cqt, int y, uint8_t alpha);
+void CQT_render_line_opaque(ShowCQT* cqt, int y);
+#endif
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
